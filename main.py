@@ -1,319 +1,464 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from datetime import datetime
+import random
 import json
 import os
-from tkcalendar import DateEntry
+from datetime import datetime
 
-class ExpenseTracker:
+class RandomTaskGenerator:
     def __init__(self, root):
         self.root = root
-        self.root.title("Expense Tracker - Трекер расходов")
-        self.root.geometry("900x650")
+        self.root.title("Random Task Generator - Генератор случайных задач")
+        self.root.geometry("800x650")
+        self.root.configure(bg='#f0f0f0')
         
         # Файл для хранения данных
-        self.data_file = "expenses.json"
-        self.expenses = []
+        self.data_file = "tasks_history.json"
+        self.history = []
         
-        # Загрузка сохраненных данных
-        self.load_data()
-        
-        # Создание интерфейса
-        self.create_input_frame()
-        self.create_filter_frame()
-        self.create_table_frame()
-        self.create_stats_frame()
-        
-        # Обновление таблицы и статистики
-        self.refresh_table()
-        self.update_stats()
-        
-    def create_input_frame(self):
-        """Форма для добавления расходов"""
-        input_frame = tk.LabelFrame(self.root, text="Добавить расход", padx=10, pady=10, font=("Arial", 12, "bold"))
-        input_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Поле суммы
-        tk.Label(input_frame, text="Сумма (₽):", font=("Arial", 10)).grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        self.amount_entry = tk.Entry(input_frame, width=20, font=("Arial", 10))
-        self.amount_entry.grid(row=0, column=1, padx=5, pady=5)
-        
-        # Поле категории
-        tk.Label(input_frame, text="Категория:", font=("Arial", 10)).grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
-        self.category_var = tk.StringVar()
-        self.category_combo = ttk.Combobox(input_frame, textvariable=self.category_var, 
-                                           values=["Еда", "Транспорт", "Развлечения", "Жилье", 
-                                                  "Здоровье", "Одежда", "Образование", "Другое"],
-                                           width=15, font=("Arial", 10))
-        self.category_combo.grid(row=0, column=3, padx=5, pady=5)
-        self.category_combo.set("Еда")
-        
-        # Поле даты
-        tk.Label(input_frame, text="Дата (ДД.ММ.ГГГГ):", font=("Arial", 10)).grid(row=0, column=4, sticky=tk.W, padx=5, pady=5)
-        self.date_entry = DateEntry(input_frame, width=12, background='darkblue',
-                                    foreground='white', borderwidth=2,
-                                    date_pattern='dd.mm.yyyy', font=("Arial", 10))
-        self.date_entry.grid(row=0, column=5, padx=5, pady=5)
-        
-        # Кнопка добавления
-        self.add_button = tk.Button(input_frame, text="Добавить расход", command=self.add_expense,
-                                   bg="#4CAF50", fg="white", font=("Arial", 10, "bold"),
-                                   padx=10, pady=5)
-        self.add_button.grid(row=0, column=6, padx=10, pady=5)
-        
-    def create_filter_frame(self):
-        """Фильтрация данных"""
-        filter_frame = tk.LabelFrame(self.root, text="Фильтрация", padx=10, pady=10, font=("Arial", 12, "bold"))
-        filter_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Фильтр по категории
-        tk.Label(filter_frame, text="Категория:", font=("Arial", 10)).grid(row=0, column=0, sticky=tk.W, padx=5)
-        self.filter_category_var = tk.StringVar(value="Все")
-        self.filter_category_combo = ttk.Combobox(filter_frame, textvariable=self.filter_category_var,
-                                                  values=["Все", "Еда", "Транспорт", "Развлечения", 
-                                                         "Жилье", "Здоровье", "Одежда", "Образование", "Другое"],
-                                                  width=15, font=("Arial", 10))
-        self.filter_category_combo.grid(row=0, column=1, padx=5)
-        self.filter_category_combo.bind("<<ComboboxSelected>>", lambda e: self.refresh_table())
-        
-        # Фильтр по дате
-        tk.Label(filter_frame, text="Дата от:", font=("Arial", 10)).grid(row=0, column=2, sticky=tk.W, padx=5)
-        self.date_from = DateEntry(filter_frame, width=12, date_pattern='dd.mm.yyyy', font=("Arial", 10))
-        self.date_from.grid(row=0, column=3, padx=5)
-        
-        tk.Label(filter_frame, text="Дата до:", font=("Arial", 10)).grid(row=0, column=4, sticky=tk.W, padx=5)
-        self.date_to = DateEntry(filter_frame, width=12, date_pattern='dd.mm.yyyy', font=("Arial", 10))
-        self.date_to.grid(row=0, column=5, padx=5)
-        
-        # Кнопка применения фильтра
-        self.apply_filter_btn = tk.Button(filter_frame, text="Применить фильтр", command=self.refresh_table,
-                                         bg="#2196F3", fg="white", font=("Arial", 10))
-        self.apply_filter_btn.grid(row=0, column=6, padx=10)
-        
-        # Кнопка сброса фильтра
-        self.reset_filter_btn = tk.Button(filter_frame, text="Сбросить фильтр", command=self.reset_filter,
-                                         bg="#FF9800", fg="white", font=("Arial", 10))
-        self.reset_filter_btn.grid(row=0, column=7, padx=5)
-        
-    def create_table_frame(self):
-        """Таблица для отображения расходов"""
-        table_frame = tk.LabelFrame(self.root, text="Список расходов", padx=10, pady=10, font=("Arial", 12, "bold"))
-        table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        
-        # Создание Treeview
-        columns = ("ID", "Дата", "Категория", "Сумма")
-        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=15)
-        
-        # Определение заголовков
-        self.tree.heading("ID", text="ID")
-        self.tree.heading("Дата", text="Дата")
-        self.tree.heading("Категория", text="Категория")
-        self.tree.heading("Сумма", text="Сумма (₽)")
-        
-        # Настройка колонок
-        self.tree.column("ID", width=50, anchor="center")
-        self.tree.column("Дата", width=120, anchor="center")
-        self.tree.column("Категория", width=150, anchor="center")
-        self.tree.column("Сумма", width=100, anchor="e")
-        
-        # Добавление скроллбара
-        scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
-        
-        # Размещение
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Контекстное меню для удаления
-        self.context_menu = tk.Menu(self.root, tearoff=0)
-        self.context_menu.add_command(label="Удалить запись", command=self.delete_expense)
-        self.tree.bind("<Button-3>", self.show_context_menu)
-        
-    def create_stats_frame(self):
-        """Статистика расходов"""
-        stats_frame = tk.LabelFrame(self.root, text="Статистика", padx=10, pady=10, font=("Arial", 12, "bold"))
-        stats_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Общая сумма
-        tk.Label(stats_frame, text="Общая сумма расходов:", font=("Arial", 11)).pack(side=tk.LEFT, padx=10)
-        self.total_label = tk.Label(stats_frame, text="0 ₽", font=("Arial", 14, "bold"), fg="#4CAF50")
-        self.total_label.pack(side=tk.LEFT, padx=10)
-        
-        # Количество записей
-        tk.Label(stats_frame, text="Количество записей:", font=("Arial", 11)).pack(side=tk.LEFT, padx=10)
-        self.count_label = tk.Label(stats_frame, text="0", font=("Arial", 14, "bold"), fg="#2196F3")
-        self.count_label.pack(side=tk.LEFT, padx=10)
-        
-        # Кнопка удаления всех данных
-        self.clear_all_btn = tk.Button(stats_frame, text="Удалить все данные", command=self.clear_all_data,
-                                      bg="#f44336", fg="white", font=("Arial", 10))
-        self.clear_all_btn.pack(side=tk.RIGHT, padx=10)
-        
-    def add_expense(self):
-        """Добавление нового расхода"""
-        # Проверка суммы
-        try:
-            amount = float(self.amount_entry.get())
-            if amount <= 0:
-                messagebox.showerror("Ошибка", "Сумма должна быть положительным числом!")
-                return
-        except ValueError:
-            messagebox.showerror("Ошибка", "Пожалуйста, введите корректную сумму!")
-            return
-        
-        # Получение категории
-        category = self.category_var.get()
-        
-        # Получение даты
-        date = self.date_entry.get()
-        
-        # Проверка формата даты
-        try:
-            datetime.strptime(date, "%d.%m.%Y")
-        except ValueError:
-            messagebox.showerror("Ошибка", "Неверный формат даты! Используйте ДД.ММ.ГГГГ")
-            return
-        
-        # Создание записи
-        expense = {
-            "id": len(self.expenses) + 1,
-            "date": date,
-            "category": category,
-            "amount": amount
+        # Предопределенные задачи по категориям
+        self.predefined_tasks = {
+            "Учёба": [
+                "Прочитать статью по программированию",
+                "Решить 3 задачи по математике",
+                "Выучить 10 новых английских слов",
+                "Посмотреть обучающее видео на YouTube",
+                "Написать конспект по теме",
+                "Пройти онлайн-тест",
+                "Сделать домашнее задание",
+                "Подготовиться к экзамену",
+                "Изучить новую библиотеку Python",
+                "Написать мини-проект"
+            ],
+            "Спорт": [
+                "Сделать зарядку (15 минут)",
+                "Пробежать 2 км",
+                "Сделать растяжку",
+                "Покататься на велосипеде",
+                "Сходить в бассейн",
+                "Сделать комплекс упражнений",
+                "Погулять на свежем воздухе",
+                "Сделать отжимания (30 раз)",
+                "Попрыгать на скакалке",
+                "Сходить в спортзал"
+            ],
+            "Работа": [
+                "Проверить почту",
+                "Составить план на день",
+                "Сделать отчёт",
+                "Провести встречу",
+                "Оптимизировать рабочий процесс",
+                "Написать документацию",
+                "Разобрать backlog задач",
+                "Сделать код-ревью",
+                "Изучить новый инструмент",
+                "Подготовить презентацию"
+            ],
+            "Дом": [
+                "Убрать на столе",
+                "Помыть посуду",
+                "Пропылесосить комнату",
+                "Полить цветы",
+                "Приготовить ужин",
+                "Постирать вещи",
+                "Выбросить мусор",
+                "Организовать хранение",
+                "Протереть пыль",
+                "Проветрить комнату"
+            ],
+            "Саморазвитие": [
+                "Медитировать 10 минут",
+                "Почитать книгу (20 страниц)",
+                "Написать пост в блог",
+                "Послушать подкаст",
+                "Научиться чему-то новому",
+                "Вести дневник благодарности",
+                "Попрактиковаться в иностранном языке",
+                "Сходить на онлайн-курс",
+                "Развить полезную привычку",
+                "Подумать о целях на неделю"
+            ]
         }
         
-        self.expenses.append(expense)
-        self.save_data()
-        self.refresh_table()
+        # Загрузка истории
+        self.load_history()
+        
+        # Создание интерфейса
+        self.create_task_display_frame()
+        self.create_category_frame()
+        self.create_generate_frame()
+        self.create_history_frame()
+        self.create_filter_frame()
+        self.create_stats_frame()
+        
+        # Обновление отображения
+        self.refresh_history_display()
+        
+    def create_task_display_frame(self):
+        """Рамка для отображения текущей задачи"""
+        display_frame = tk.LabelFrame(self.root, text="Текущая задача", 
+                                     padx=10, pady=10, font=("Arial", 14, "bold"),
+                                     bg='#e8f4f8')
+        display_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.current_task_label = tk.Label(display_frame, text="Нажмите 'Сгенерировать задачу'",
+                                          font=("Arial", 16, "bold"), fg="#2196F3",
+                                          bg='#e8f4f8', wraplength=700, height=3)
+        self.current_task_label.pack(pady=20)
+        
+    def create_category_frame(self):
+        """Рамка для выбора категории"""
+        category_frame = tk.Frame(self.root, bg='#f0f0f0')
+        category_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        tk.Label(category_frame, text="Категория задачи:", font=("Arial", 11),
+                bg='#f0f0f0').pack(side=tk.LEFT, padx=5)
+        
+        self.category_var = tk.StringVar(value="Все категории")
+        self.category_combo = ttk.Combobox(category_frame, textvariable=self.category_var,
+                                           values=["Все категории", "Учёба", "Спорт", "Работа", "Дом", "Саморазвитие"],
+                                           width=20, font=("Arial", 10), state="readonly")
+        self.category_combo.pack(side=tk.LEFT, padx=5)
+        
+    def create_generate_frame(self):
+        """Рамка с кнопками генерации"""
+        generate_frame = tk.Frame(self.root, bg='#f0f0f0')
+        generate_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Кнопка генерации случайной задачи
+        self.generate_btn = tk.Button(generate_frame, text="🎲 Сгенерировать задачу",
+                                     command=self.generate_random_task,
+                                     bg="#4CAF50", fg="white", font=("Arial", 12, "bold"),
+                                     padx=20, pady=10, cursor="hand2")
+        self.generate_btn.pack(pady=5)
+        
+        # Кнопка добавления своей задачи
+        self.add_custom_btn = tk.Button(generate_frame, text="➕ Добавить свою задачу",
+                                       command=self.open_add_task_dialog,
+                                       bg="#FF9800", fg="white", font=("Arial", 11),
+                                       padx=15, pady=5, cursor="hand2")
+        self.add_custom_btn.pack(pady=5)
+        
+    def create_history_frame(self):
+        """Рамка с историей задач"""
+        history_frame = tk.LabelFrame(self.root, text="История сгенерированных задач",
+                                     padx=10, pady=10, font=("Arial", 12, "bold"),
+                                     bg='#f0f0f0')
+        history_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Создание Treeview для истории
+        columns = ("Время", "Категория", "Задача")
+        self.history_tree = ttk.Treeview(history_frame, columns=columns, show="headings", height=12)
+        
+        # Определение заголовков
+        self.history_tree.heading("Время", text="Время генерации")
+        self.history_tree.heading("Категория", text="Категория")
+        self.history_tree.heading("Задача", text="Задача")
+        
+        # Настройка колонок
+        self.history_tree.column("Время", width=150, anchor="center")
+        self.history_tree.column("Категория", width=120, anchor="center")
+        self.history_tree.column("Задача", width=400, anchor="w")
+        
+        # Скроллбар
+        scrollbar = ttk.Scrollbar(history_frame, orient=tk.VERTICAL, command=self.history_tree.yview)
+        self.history_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Размещение
+        self.history_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Контекстное меню
+        self.context_menu = tk.Menu(self.root, tearoff=0)
+        self.context_menu.add_command(label="Удалить задачу из истории", command=self.delete_selected_task)
+        self.history_tree.bind("<Button-3>", self.show_context_menu)
+        
+    def create_filter_frame(self):
+        """Рамка для фильтрации истории"""
+        filter_frame = tk.LabelFrame(self.root, text="Фильтрация истории",
+                                    padx=10, pady=5, font=("Arial", 11, "bold"),
+                                    bg='#f0f0f0')
+        filter_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        tk.Label(filter_frame, text="Фильтр по категории:", font=("Arial", 10),
+                bg='#f0f0f0').grid(row=0, column=0, padx=5, pady=5)
+        
+        self.filter_category_var = tk.StringVar(value="Все")
+        self.filter_combo = ttk.Combobox(filter_frame, textvariable=self.filter_category_var,
+                                         values=["Все", "Учёба", "Спорт", "Работа", "Дом", "Саморазвитие", "Пользовательская"],
+                                         width=15, font=("Arial", 10), state="readonly")
+        self.filter_combo.grid(row=0, column=1, padx=5, pady=5)
+        self.filter_combo.bind("<<ComboboxSelected>>", lambda e: self.refresh_history_display())
+        
+        # Кнопка сброса фильтра
+        self.reset_filter_btn = tk.Button(filter_frame, text="Сбросить фильтр",
+                                         command=self.reset_filter,
+                                         bg="#9E9E9E", fg="white", font=("Arial", 9),
+                                         cursor="hand2")
+        self.reset_filter_btn.grid(row=0, column=2, padx=10, pady=5)
+        
+        # Кнопка очистки истории
+        self.clear_history_btn = tk.Button(filter_frame, text="Очистить всю историю",
+                                          command=self.clear_all_history,
+                                          bg="#f44336", fg="white", font=("Arial", 9),
+                                          cursor="hand2")
+        self.clear_history_btn.grid(row=0, column=3, padx=10, pady=5)
+        
+    def create_stats_frame(self):
+        """Рамка со статистикой"""
+        stats_frame = tk.Frame(self.root, bg='#f0f0f0')
+        stats_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        tk.Label(stats_frame, text="📊 Статистика:", font=("Arial", 10, "bold"),
+                bg='#f0f0f0').pack(side=tk.LEFT, padx=10)
+        
+        self.stats_label = tk.Label(stats_frame, text="Всего задач: 0",
+                                   font=("Arial", 10), fg="#4CAF50",
+                                   bg='#f0f0f0')
+        self.stats_label.pack(side=tk.LEFT, padx=10)
+        
+    def generate_random_task(self):
+        """Генерация случайной задачи"""
+        category = self.category_var.get()
+        
+        # Выбор категории
+        if category == "Все категории":
+            # Выбираем случайную категорию из предопределенных
+            selected_category = random.choice(list(self.predefined_tasks.keys()))
+            # Выбираем случайную задачу из выбранной категории
+            task = random.choice(self.predefined_tasks[selected_category])
+            category_display = selected_category
+        else:
+            # Выбираем задачу из конкретной категории
+            category_display = category
+            if category not in self.predefined_tasks:
+                messagebox.showerror("Ошибка", "Категория не найдена!")
+                return
+            task = random.choice(self.predefined_tasks[category])
+        
+        # Получаем текущее время
+        current_time = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        
+        # Добавляем в историю
+        history_item = {
+            "id": len(self.history) + 1,
+            "timestamp": current_time,
+            "category": category_display,
+            "task": task,
+            "type": "predefined"
+        }
+        
+        self.history.append(history_item)
+        
+        # Отображаем текущую задачу
+        self.current_task_label.config(text=f"✨ {task} ✨", fg="#4CAF50")
+        
+        # Сохраняем и обновляем отображение
+        self.save_history()
+        self.refresh_history_display()
         self.update_stats()
         
-        # Очистка поля суммы
-        self.amount_entry.delete(0, tk.END)
+        # Визуальный эффект
+        self.animate_task_display()
         
-        messagebox.showinfo("Успех", "Расход успешно добавлен!")
+    def open_add_task_dialog(self):
+        """Открытие диалога для добавления своей задачи"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Добавить свою задачу")
+        dialog.geometry("450x300")
+        dialog.resizable(False, False)
+        dialog.configure(bg='#f0f0f0')
         
-    def delete_expense(self):
-        """Удаление выбранного расхода"""
-        selected_item = self.tree.selection()
-        if not selected_item:
-            messagebox.showwarning("Предупреждение", "Выберите запись для удаления!")
+        # Центрирование окна
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        tk.Label(dialog, text="Добавить новую задачу", font=("Arial", 14, "bold"),
+                bg='#f0f0f0', fg="#2196F3").pack(pady=15)
+        
+        # Выбор категории
+        tk.Label(dialog, text="Категория:", font=("Arial", 11), bg='#f0f0f0').pack(pady=5)
+        category_var = tk.StringVar(value="Работа")
+        category_combo = ttk.Combobox(dialog, textvariable=category_var,
+                                     values=["Учёба", "Спорт", "Работа", "Дом", "Саморазвитие"],
+                                     width=20, state="readonly")
+        category_combo.pack(pady=5)
+        
+        # Ввод задачи
+        tk.Label(dialog, text="Текст задачи:", font=("Arial", 11), bg='#f0f0f0').pack(pady=5)
+        task_text = tk.Text(dialog, height=5, width=50, font=("Arial", 10))
+        task_text.pack(pady=5, padx=20)
+        
+        def add_task():
+            task = task_text.get("1.0", tk.END).strip()
+            
+            # Проверка на пустую строку
+            if not task:
+                messagebox.showerror("Ошибка", "Текст задачи не может быть пустым!")
+                return
+            
+            category = category_var.get()
+            
+            # Добавляем задачу в предопределенные (для текущей сессии)
+            if category not in self.predefined_tasks:
+                self.predefined_tasks[category] = []
+            
+            self.predefined_tasks[category].append(task)
+            
+            # Добавляем в историю как пользовательскую
+            current_time = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+            history_item = {
+                "id": len(self.history) + 1,
+                "timestamp": current_time,
+                "category": category,
+                "task": task,
+                "type": "custom"
+            }
+            
+            self.history.append(history_item)
+            self.save_history()
+            self.refresh_history_display()
+            self.update_stats()
+            
+            # Отображаем добавленную задачу как текущую
+            self.current_task_label.config(text=f"➕ Добавлено: {task}", fg="#FF9800")
+            
+            messagebox.showinfo("Успех", f"Задача успешно добавлена в категорию '{category}'!")
+            dialog.destroy()
+        
+        tk.Button(dialog, text="Добавить", command=add_task,
+                 bg="#4CAF50", fg="white", font=("Arial", 11),
+                 padx=20, pady=5, cursor="hand2").pack(pady=10)
+        
+    def delete_selected_task(self):
+        """Удаление выбранной задачи из истории"""
+        selected = self.history_tree.selection()
+        if not selected:
+            messagebox.showwarning("Предупреждение", "Выберите задачу для удаления!")
             return
         
-        # Получение ID записи
-        item = self.tree.item(selected_item[0])
-        expense_id = item['values'][0]
+        # Получаем индекс выбранной задачи
+        item = self.history_tree.item(selected[0])
+        task_text = item['values'][2]
+        task_time = item['values'][0]
         
-        # Удаление из списка
-        self.expenses = [e for e in self.expenses if e['id'] != expense_id]
+        # Удаляем из истории
+        self.history = [h for h in self.history if not (h['timestamp'] == task_time and h['task'] == task_text)]
         
         # Перенумерация ID
-        for i, expense in enumerate(self.expenses):
-            expense['id'] = i + 1
+        for i, item in enumerate(self.history):
+            item['id'] = i + 1
         
-        self.save_data()
-        self.refresh_table()
+        self.save_history()
+        self.refresh_history_display()
         self.update_stats()
         
-        messagebox.showinfo("Успех", "Запись удалена!")
+        messagebox.showinfo("Успех", "Задача удалена из истории!")
         
-    def refresh_table(self):
-        """Обновление таблицы с учетом фильтров"""
-        # Очистка таблицы
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+    def clear_all_history(self):
+        """Очистка всей истории"""
+        if messagebox.askyesno("Подтверждение", "Вы уверены, что хотите очистить всю историю? Это действие нельзя отменить!"):
+            self.history = []
+            self.save_history()
+            self.refresh_history_display()
+            self.update_stats()
+            self.current_task_label.config(text="История очищена. Нажмите 'Сгенерировать задачу'", fg="#2196F3")
+            messagebox.showinfo("Успех", "История успешно очищена!")
+            
+    def refresh_history_display(self):
+        """Обновление отображения истории с учетом фильтра"""
+        # Очищаем таблицу
+        for item in self.history_tree.get_children():
+            self.history_tree.delete(item)
         
-        # Получение фильтров
+        # Получаем фильтр
         filter_category = self.filter_category_var.get()
-        filter_date_from = self.date_from.get()
-        filter_date_to = self.date_to.get()
         
-        # Фильтрация расходов
-        filtered_expenses = self.expenses.copy()
+        # Фильтрация истории
+        filtered_history = self.history.copy()
         
         if filter_category != "Все":
-            filtered_expenses = [e for e in filtered_expenses if e['category'] == filter_category]
+            filtered_history = [h for h in filtered_history if h['category'] == filter_category]
         
-        if filter_date_from and filter_date_to:
-            try:
-                from_date = datetime.strptime(filter_date_from, "%d.%m.%Y")
-                to_date = datetime.strptime(filter_date_to, "%d.%m.%Y")
-                
-                filtered_expenses = [e for e in filtered_expenses 
-                                   if from_date <= datetime.strptime(e['date'], "%d.%m.%Y") <= to_date]
-            except:
-                pass
+        # Отображаем историю в обратном порядке (новые сверху)
+        for item in reversed(filtered_history):
+            # Выделяем пользовательские задачи цветом
+            tags = ()
+            if item.get('type') == 'custom':
+                tags = ('custom',)
+            
+            self.history_tree.insert("", tk.END, values=(
+                item['timestamp'],
+                item['category'],
+                item['task']
+            ), tags=tags)
         
-        # Сортировка по дате (новые сверху)
-        filtered_expenses.sort(key=lambda x: datetime.strptime(x['date'], "%d.%m.%Y"), reverse=True)
-        
-        # Добавление в таблицу
-        for expense in filtered_expenses:
-            self.tree.insert("", tk.END, values=(
-                expense['id'],
-                expense['date'],
-                expense['category'],
-                f"{expense['amount']:.2f}"
-            ))
-        
-        # Обновление статистики для отфильтрованных данных
-        total = sum(e['amount'] for e in filtered_expenses)
-        self.total_label.config(text=f"{total:.2f} ₽")
-        self.count_label.config(text=str(len(filtered_expenses)))
-        
-    def update_stats(self):
-        """Обновление общей статистики"""
-        total = sum(e['amount'] for e in self.expenses)
-        self.total_label.config(text=f"{total:.2f} ₽")
-        self.count_label.config(text=str(len(self.expenses)))
+        # Настройка цветов
+        self.history_tree.tag_configure('custom', background='#FFF9C4')
         
     def reset_filter(self):
-        """Сброс всех фильтров"""
+        """Сброс фильтра"""
         self.filter_category_var.set("Все")
-        self.date_from.set_date(datetime.now())
-        self.date_to.set_date(datetime.now())
-        self.refresh_table()
+        self.refresh_history_display()
         
-    def clear_all_data(self):
-        """Удаление всех данных"""
-        if messagebox.askyesno("Подтверждение", "Вы уверены, что хотите удалить все данные? Это действие нельзя отменить!"):
-            self.expenses = []
-            self.save_data()
-            self.refresh_table()
-            self.update_stats()
-            messagebox.showinfo("Успех", "Все данные удалены!")
+    def update_stats(self):
+        """Обновление статистики"""
+        total_tasks = len(self.history)
+        custom_tasks = len([h for h in self.history if h.get('type') == 'custom'])
+        
+        stats_text = f"Всего задач: {total_tasks} | Пользовательских: {custom_tasks}"
+        self.stats_label.config(text=stats_text)
+        
+    def animate_task_display(self):
+        """Анимация отображения задачи"""
+        def reset_color():
+            self.current_task_label.config(fg="#2196F3")
+        
+        self.root.after(2000, reset_color)
         
     def show_context_menu(self, event):
         """Показать контекстное меню"""
-        item = self.tree.identify_row(event.y)
+        item = self.history_tree.identify_row(event.y)
         if item:
-            self.tree.selection_set(item)
+            self.history_tree.selection_set(item)
             self.context_menu.post(event.x_root, event.y_root)
             
-    def load_data(self):
-        """Загрузка данных из JSON файла"""
+    def load_history(self):
+        """Загрузка истории из JSON файла"""
         if os.path.exists(self.data_file):
             try:
                 with open(self.data_file, 'r', encoding='utf-8') as f:
-                    self.expenses = json.load(f)
+                    self.history = json.load(f)
             except:
-                self.expenses = []
+                self.history = []
         else:
-            # Создание тестовых данных для демонстрации
-            self.expenses = [
-                {"id": 1, "date": "15.01.2024", "category": "Еда", "amount": 500.00},
-                {"id": 2, "date": "16.01.2024", "category": "Транспорт", "amount": 200.00},
-                {"id": 3, "date": "17.01.2024", "category": "Развлечения", "amount": 1000.00},
+            # Создаем тестовые данные для демонстрации
+            self.history = [
+                {
+                    "id": 1,
+                    "timestamp": datetime.now().strftime("%d.%m.%Y 10:30:00"),
+                    "category": "Учёба",
+                    "task": "Прочитать статью по программированию",
+                    "type": "predefined"
+                },
+                {
+                    "id": 2,
+                    "timestamp": datetime.now().strftime("%d.%m.%Y 11:15:00"),
+                    "category": "Спорт",
+                    "task": "Сделать зарядку (15 минут)",
+                    "type": "predefined"
+                }
             ]
-            self.save_data()
+            self.save_history()
             
-    def save_data(self):
-        """Сохранение данных в JSON файл"""
+    def save_history(self):
+        """Сохранение истории в JSON файл"""
         with open(self.data_file, 'w', encoding='utf-8') as f:
-            json.dump(self.expenses, f, ensure_ascii=False, indent=2)
+            json.dump(self.history, f, ensure_ascii=False, indent=2)
 
 def main():
     root = tk.Tk()
-    app = ExpenseTracker(root)
+    app = RandomTaskGenerator(root)
     root.mainloop()
 
 if __name__ == "__main__":
