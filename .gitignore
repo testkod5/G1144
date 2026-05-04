@@ -1,5 +1,7 @@
 __pycache__/
-*.pyc
-*.pyo
-favorites.json
-.DS_Store
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+ENV/
